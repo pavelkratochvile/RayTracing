@@ -3,6 +3,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System;
 
+//RayTracing Controller
 public class RayTracingManager : MonoBehaviour
 {
     public RenderTexture renderTexture;
