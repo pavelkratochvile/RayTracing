@@ -1,0 +1,22 @@
+#pragma kernel CSMain
+
+RWTexture2D<float4> Result;
+float4x4 CameraToWorld;
+float4x4 CameraInverseProjection;
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    uint width, height;
+    Result.GetDimensions(width, height);
+
+    float u = (2.0f * (id.x + 0.5f) / (float)width) - 1.0f;
+    float v = (2.0f * (id.y + 0.5f) / (float)height) - 1.0f;
+    
+    float3 origin = mul(CameraToWorld, float4(0.0f, 0.0f, 0.0f, 1.0f)).xyz;
+    float3 direction = mul(CameraInverseProjection, float4(u, v, 0.0f, 1.0f)).xyz;
+    direction = mul(CameraToWorld, float4(direction, 0.0f));
+    direction = normalize(direction);
+
+    Result[id.xy] = float4(direction, 1.0f);
+}
