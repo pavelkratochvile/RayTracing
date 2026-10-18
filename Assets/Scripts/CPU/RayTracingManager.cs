@@ -3,12 +3,21 @@ using System.Collections;
 using System.Collections.Generic;
 using System;
 
-//RayTracing Controller
+struct Sphere
+{
+    public Vector3 center;
+    public float radius;
+    public Vector3 albedo;
+    public Vector3 emissionColor;
+    public Vector3 emissionStrength;
+}
+
 public class RayTracingManager : MonoBehaviour
 {
     public RenderTexture renderTexture;
     public ComputeShader computeShader;
     private Camera _camera;
+    private List<Sphere> spheres = new List<Sphere>();
     
     void Start()
     {
@@ -42,7 +51,15 @@ public class RayTracingManager : MonoBehaviour
     }
 
     private void SetShaderParams()
-    {
+    {   
+        int stride = System.Runtime.InteropServices.Marshal.SizeOf(typeof(Sphere));
+        int sphereCount = spheres.Count;
+        ComputeBuffer sphereBuffer = new ComputeBuffer(sphereCount, stride);
+        sphereBuffer.SetData(spheres.ToArray());
+        sphereBuffer.Release();
+
+        computeShader.SetBuffer(0, "Spheres", sphereBuffer);
+        computeShader.SetInt("NumSpheres", sphereCount);
         computeShader.SetTexture(0, "Result", renderTexture);
         computeShader.SetMatrix("CameraToWorld", _camera.cameraToWorldMatrix);
         computeShader.SetMatrix("CameraInverseProjection", _camera.projectionMatrix.inverse);
