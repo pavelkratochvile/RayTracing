@@ -1,142 +1,192 @@
 #pragma kernel CSMain
 
+struct RayTracingMaterial{
+    float3 albedo;
+    float3 emissionColor;
+    float3 emissionStrength;
+};
+
+struct Sphere{
+    float3 center;
+    float radius;
+    RayTracingMaterial material;
+};
+
 RWTexture2D<float4> Result;
 float4x4 CameraToWorld;
 float4x4 CameraInverseProjection;
 StructuredBuffer<Sphere> Spheres;
 int NumSpheres;
+int frameCount;
+
 
 struct HitInfo{
     float t;
     float3 position;
     float3 normal;
     bool hit;
-    float3 albedo;
+    RayTracingMaterial material;
 };
 
-struct Sphere{
-    float3 center;
-    float radius;
-    float3 albedo;
-    float3 emissionColor;
-    float3 emissionStrength;
-};
 
 struct Ray{
     float3 origin;
     float3 direction;
 };
 
-void createHitInfo(inout HitInfo hitInfo, float t, float3 position, float3 normal, bool hit, float3 albedo){
-    hitInfo.t = t;
-    hitInfo.position = position;
-    hitInfo.normal = normal;
-    hitInfo.hit = hit;
-    hitInfo.albedo = albedo;
-}
-
-void createRay(inout Ray ray, float3 origin, float3 direction){
-    ray.origin = origin;
-    ray.direction = direction;
-}
-
-void IntersectSphere(Ray ray, inout HitInfo bestHit, Sphere sphere)
+uint NextRandom(inout uint state)
 {
+    state = state * 747796405u + 2891336453u;
+    uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+    return (word >> 22u) ^ word;
+}
+
+float RandomValue(inout uint state)
+{
+    return NextRandom(state) / 4294967295.0;
+}
+
+float3 RandomDirection(inout uint state)
+{
+    float z = RandomValue(state) * 2.0f - 1.0f;
+    float a = RandomValue(state) * 2.0f * 3.14159265f;
+    float r = sqrt(max(0.0f, 1.0f - z * z));
+    
+    float x = r * cos(a);
+    float y = r * sin(a);
+    
+    return float3(x, y, z);
+}
+
+bool IntersectSphere(in Ray ray, in Sphere sphere, float maxT, out HitInfo hitInfo)
+{
+    hitInfo.t = 0.0f;
+    hitInfo.position = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.normal = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.hit = false;
+    hitInfo.material.albedo = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.material.emissionColor = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.material.emissionStrength = float3(0.0f, 0.0f, 0.0f);
+
     float3 d = ray.origin - sphere.center;
     float p1 = -dot(ray.direction, d);
     float p2sqr = p1 * p1 - dot(d, d) + sphere.radius * sphere.radius;
     
-    if (p2sqr < 0.0f) return;
+    if (p2sqr < 0.0f)
+        return false;
     
     float p2 = sqrt(p2sqr);
-    float t = p1 - p2 > 0.001f ? p1 - p2 : p1 + p2;
+    float t = (p1 - p2 > 0.001f) ? (p1 - p2) : (p1 + p2);
     
-    if (t > 0.001f && t < bestHit.t)
+    if (t > 0.001f && t < maxT)
     {
-        bestHit.hit = true;
-        bestHit.t = t;
-        bestHit.position = ray.origin + t * ray.direction;
-        bestHit.normal = normalize(bestHit.position - sphere.center);
-        bestHit.albedo = sphere.albedo;
-        bestHit.shininess = sphere.shininess;
+        hitInfo.t = t;
+        hitInfo.position = ray.origin + t * ray.direction;
+        hitInfo.normal = (hitInfo.position - sphere.center) / sphere.radius;
+        hitInfo.hit = true;
+        hitInfo.material = sphere.material;
+        return true;
     }
+    return false;
 }
 
-void IntersectGroundPlane(Ray ray, inout HitInfo bestHit)
+bool IntersectGroundPlane(in Ray ray, float maxT, out HitInfo hitInfo)
 {
+    hitInfo.t = 0.0f;
+    hitInfo.position = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.normal = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.hit = false;
+    hitInfo.material.albedo = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.material.emissionColor = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.material.emissionStrength = float3(0.0f, 0.0f, 0.0f);
+
+    if (abs(ray.direction.y) < 1e-5f)
+        return false;
+
     float t = -ray.origin.y / ray.direction.y;
     
-    if (t > 0.001f && t < bestHit.t)
+    if (t > 0.001f && t < maxT)
     {
-        bestHit.hit = true;
-        bestHit.t = t;
-        bestHit.position = ray.origin + t * ray.direction;
-        bestHit.normal = float3(0.0f, 1.0f, 0.0f);
-        
-        float scale = 3.0f; 
-        
-        float cx = floor(bestHit.position.x * scale);
-        float cz = floor(bestHit.position.z * scale);
-        
-        float checker = frac((cx + cz) * 0.5f);
-        
-        if (checker > 0.25f)
+        hitInfo.t = t;
+        hitInfo.position = ray.origin + t * ray.direction;
+        hitInfo.normal = float3(0.0f, 1.0f, 0.0f);
+        hitInfo.hit = true;
+        hitInfo.material.albedo = float3(0.5f, 0.5f, 0.5f);
+        hitInfo.material.emissionColor = float3(0.0f, 0.0f, 0.0f);
+        hitInfo.material.emissionStrength = float3(0.0f, 0.0f, 0.0f);
+        return true;
+    }
+    return false;
+}
+
+HitInfo CalculateRayCollision(in Ray ray)
+{
+    HitInfo bestHitInfo;
+    bestHitInfo.hit = false;
+    bestHitInfo.t = 1e30f; // Nastavíme počáteční limit na nekonečno
+
+    HitInfo tempHit;
+
+    for (int i = 0; i < NumSpheres; i++)
+    {
+        // Předává se bestHitInfo.t jako horní hranice maxT
+        if (IntersectSphere(ray, Spheres[i], bestHitInfo.t, tempHit))
         {
-            bestHit.albedo = float3(0.8f, 0.8f, 0.8f);
+            bestHitInfo = tempHit;
+        }
+    }
+
+    if (IntersectGroundPlane(ray, bestHitInfo.t, tempHit))
+    {
+        bestHitInfo = tempHit;
+    }
+    
+    return bestHitInfo;
+}
+
+float3 Trace(inout Ray ray, inout uint state)
+{
+    int MaxBounceCount = 10;
+    
+    float3 incomingLight = float3(0.0f, 0.0f, 0.0f);
+    float3 rayColor = float3(1.0f, 1.0f, 1.0f);
+
+    for(int bounce = 0; bounce < MaxBounceCount; bounce++)
+    {
+        HitInfo hitInfo = CalculateRayCollision(ray);
+
+        if(hitInfo.hit)
+        {
+            RayTracingMaterial material = hitInfo.material;
+            ray.origin = hitInfo.position + hitInfo.normal * 0.001f;
+            float3 scatterDir = hitInfo.normal + RandomDirection(state);
+
+            if (dot(scatterDir, scatterDir) < 1e-6f)
+            {
+                scatterDir = hitInfo.normal;
+            }
+
+            ray.direction = normalize(scatterDir);
+
+            float3 emitedLight = material.emissionColor * material.emissionStrength;
+            
+            // Pokud narazí na světlo tak se barva pixelu obarví o světlo a to co paprsek nasbíral
+            incomingLight += rayColor * emitedLight;
+            
+            // Paprsek se obarví o barvu materiálu, který zasáhl
+            rayColor *= material.albedo;
         }
         else
         {
-            bestHit.albedo = float3(0.2f, 0.2f, 0.2f);
+            //svetle modra
+            float3 skyLight = float3(0.5f, 0.7f, 1.0f);
+            incomingLight += rayColor * skyLight;
+            break;
         }
-        
-        bestHit.shininess = 0.0f;
     }
+    return incomingLight;
 }
 
-float3 Shade(Ray ray, HitInfo hitInfo, DirectionalLight directionalLight)
-{
-    if (!hitInfo.hit)
-    {
-        return float3(0.2f, 0.5f, 0.8f); 
-    }
-    
-    float3 lightDir = normalize(-directionalLight.direction);
-    
-    float diff = max(dot(hitInfo.normal, lightDir), 0.0f);
-    float3 diffuseColor = hitInfo.albedo * directionalLight.color * diff;
-    
-    float3 ambient = hitInfo.albedo * float3(0.1f, 0.1f, 0.1f);
-    
-    float3 specular = float3(0.0f, 0.0f, 0.0f);
-    
-    if (diff > 0.0f && hitInfo.shininess > 0.0f)
-    {
-        float3 reflectDir = reflect(normalize(directionalLight.direction), hitInfo.normal);
-        float specAngle = max(dot(reflectDir, normalize(-ray.direction)), 0.0f);
-        
-        specular = directionalLight.color * pow(specAngle, hitInfo.shininess);
-    }
-    
-    float3 finalColor = diffuseColor + ambient + specular;
-    return finalColor;
-}
-
-HitInfo Trace(Ray ray){
-    HitInfo hitInfo;
-    createHitInfo(hitInfo, 1e30f, float3(0.0f, 0.0f, 0.0f), float3(0.0f, 0.0f, 0.0f), false, float3(0.0f, 0.0f, 0.0f), 0.0f);
-    
-    Sphere s1;
-    Sphere s2;
-    
-    createSphere(s1, float3(0.0f, 3.0f, 5.0f), 3.0f, float3(0.0f, 1.0f, 0.0f), 50.0f);
-    createSphere(s2, float3(0.0f, 1.0f, 0.0f), 1.0f, float3(1.0f, 0.0f, 0.0f), 50.0f);
-    
-    IntersectGroundPlane(ray, hitInfo);
-    IntersectSphere(ray, hitInfo, s1);
-    IntersectSphere(ray, hitInfo, s2);
-
-    return hitInfo;
-}
 
 
 [numthreads(8,8,1)]
@@ -145,20 +195,29 @@ void CSMain (uint3 id : SV_DispatchThreadID)
     uint width, height;
     Result.GetDimensions(width, height);
 
-    float u = (2.0f * (id.x + 0.5f) / (float)width) - 1.0f;
-    float v = (2.0f * (id.y + 0.5f) / (float)height) - 1.0f;
+    uint state = (id.x + id.y * width) * frameCount;
     
     float3 origin = mul(CameraToWorld, float4(0.0f, 0.0f, 0.0f, 1.0f)).xyz;
+
+    float offsetX = RandomValue(state) - 0.5f;
+    float offsetY = RandomValue(state) - 0.5f;
+
+    float u = (2.0f * (id.x + 0.5f + offsetX) / (float)width) - 1.0f;
+    float v = (2.0f * (id.y + 0.5f + offsetY) / (float)height) - 1.0f;
+        
     float3 direction = mul(CameraInverseProjection, float4(u, v, 0.0f, 1.0f)).xyz;
     direction = mul(CameraToWorld, float4(direction, 0.0f)).xyz;
     direction = normalize(direction);
-
-    DirectionalLight directionalLight;
-    createDirectionalLight(directionalLight, float3(0.0f, -1.0f, 0.0f), float3(1.0f, 1.0f, 1.0f));
-
+        
     Ray ray;
-    createRay(ray, origin, direction, float3(1.0f, 1.0f, 1.0f));
-    HitInfo hitInfo = Trace(ray);
-    float3 finalColor = Shade(ray, hitInfo, directionalLight);
-    Result[id.xy] = float4(finalColor, 1.0f);
+    ray.origin = origin;
+    ray.direction = direction;
+    
+    float3 rayPixelColor = Trace(ray, state);
+    
+    float3 prevColor = (frameCount == 0) ? float3(0.0f, 0.0f, 0.0f) : Result[id.xy].xyz;
+    float weight = 1.0f / (frameCount + 1.0f);
+    float3 pixelColor = lerp(prevColor, rayPixelColor, weight);
+    
+    Result[id.xy] = float4(pixelColor, 1.0f);
 }
