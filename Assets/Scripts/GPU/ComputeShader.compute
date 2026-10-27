@@ -4,6 +4,7 @@ struct RayTracingMaterial{
     float3 albedo;
     float3 emissionColor;
     float3 emissionStrength;
+    float smoothness;
 };
 
 struct Sphere{
@@ -18,6 +19,7 @@ float4x4 CameraInverseProjection;
 StructuredBuffer<Sphere> Spheres;
 int NumSpheres;
 int frameCount;
+int bounceCount;
 
 
 struct HitInfo{
@@ -99,6 +101,7 @@ bool IntersectGroundPlane(in Ray ray, float maxT, out HitInfo hitInfo)
     hitInfo.material.albedo = float3(0.0f, 0.0f, 0.0f);
     hitInfo.material.emissionColor = float3(0.0f, 0.0f, 0.0f);
     hitInfo.material.emissionStrength = float3(0.0f, 0.0f, 0.0f);
+    hitInfo.material.smoothness = 0.0f;
 
     if (abs(ray.direction.y) < 1e-5f)
         return false;
@@ -145,49 +148,50 @@ HitInfo CalculateRayCollision(in Ray ray)
 }
 
 float3 Trace(inout Ray ray, inout uint state)
-{
-    int MaxBounceCount = 10;
-    
+{   
     float3 incomingLight = float3(0.0f, 0.0f, 0.0f);
     float3 rayColor = float3(1.0f, 1.0f, 1.0f);
 
-    for(int bounce = 0; bounce < MaxBounceCount; bounce++)
+    for (int bounce = 0; bounce < bounceCount; bounce++)
     {
         HitInfo hitInfo = CalculateRayCollision(ray);
 
-        if(hitInfo.hit)
+        if (hitInfo.hit)
         {
             RayTracingMaterial material = hitInfo.material;
-            ray.origin = hitInfo.position + hitInfo.normal * 0.001f;
-            float3 scatterDir = hitInfo.normal + RandomDirection(state);
+            
+            float3 lambertDir = hitInfo.normal + RandomDirection(state);
+            float3 reflectDir = reflect(ray.direction, hitInfo.normal);
+            float3 newRayDir = lerp(lambertDir, reflectDir, material.smoothness);
 
-            if (dot(scatterDir, scatterDir) < 1e-6f)
+            if (dot(newRayDir, newRayDir) < 1e-6f)
             {
-                scatterDir = hitInfo.normal;
+                newRayDir = hitInfo.normal;
             }
 
-            ray.direction = normalize(scatterDir);
+            // Posun počátku a nový směr paprsku
+            ray.origin = hitInfo.position + hitInfo.normal * 0.001f;
+            ray.direction = normalize(newRayDir);
 
             float3 emitedLight = material.emissionColor * material.emissionStrength;
             
-            // Pokud narazí na světlo tak se barva pixelu obarví o světlo a to co paprsek nasbíral
+            // Pokud narazí na světlo, přičte se
             incomingLight += rayColor * emitedLight;
             
-            // Paprsek se obarví o barvu materiálu, který zasáhl
+            // Paprsek se obarví o barvu materiálu
             rayColor *= material.albedo;
         }
         else
         {
-            //svetle modra
+            // Světle modrá obloha
             float3 skyLight = float3(0.5f, 0.7f, 1.0f);
             incomingLight += rayColor * skyLight;
             break;
         }
     }
     return incomingLight;
+
 }
-
-
 
 [numthreads(8,8,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
