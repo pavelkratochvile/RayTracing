@@ -7,6 +7,15 @@ struct RayTracingMaterial{
     float smoothness;
 };
 
+struct Vertex{
+    float x, y, z;
+};
+
+struct Triangle{
+    int id0, id1, id2;
+    int materialIndex;
+};
+
 struct Sphere{
     float3 center;
     float radius;
@@ -16,7 +25,12 @@ struct Sphere{
 RWTexture2D<float4> Result;
 float4x4 CameraToWorld;
 float4x4 CameraInverseProjection;
+
 StructuredBuffer<Sphere> Spheres;
+StructuredBuffer<Vertex> globalVertices;
+StructuredBuffer<Triangle> globalTriangles;
+StructuredBuffer<RayTracingMaterial> globalTriangleMaterials;
+
 int NumSpheres;
 int frameCount;
 int bounceCount;

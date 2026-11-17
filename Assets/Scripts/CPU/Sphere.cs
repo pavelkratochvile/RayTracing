@@ -7,10 +7,7 @@ public struct SphereDataGPU
 {
     public Vector3 center;
     public float radius;
-    public Vector3 albedo;
-    public Vector3 emissionColor;
-    public Vector3 emissionStrength;
-    public float smoothness;
+    public Material material;
 }
 
 public class Sphere : MonoBehaviour
@@ -19,7 +16,6 @@ public class Sphere : MonoBehaviour
     public Vector3 emissionColor;
     public Vector3 emissionStrength;
     public float smoothness;
-
     public bool didChange = false;
     Vector3 lastPosition;
     float lastScale;
@@ -53,10 +49,13 @@ public class Sphere : MonoBehaviour
         {
             center = center,
             radius = radius,
-            albedo = albedo,
-            emissionColor = emissionColor,
-            emissionStrength = emissionStrength,
-            smoothness = smoothness
+            material = new Material
+            {
+                color = albedo,
+                emissionColor = emissionColor,
+                emissionStrength = emissionStrength,
+                smoothness = smoothness
+            }
         };
     }
 }

@@ -14,6 +14,9 @@ public class RayTracingManager : MonoBehaviour
     private Vector3 _cameraOldRot;
     public int frameCount;
     private ComputeBuffer sphereBuffer;
+    private ComputeBuffer vertexBuffer;
+    private ComputeBuffer triangleBuffer;
+    private ComputeBuffer materialBuffer;
 
     [Header("Ray Tracing Settings")]
     [Range(1, 30)]
@@ -62,11 +65,19 @@ public class RayTracingManager : MonoBehaviour
         sphereBuffer = objectExporter.ExportSpheres();
     }
 
+    private void setMeshesBuffer()
+    {
+        (vertexBuffer, triangleBuffer, materialBuffer) = objectExporter.ExportMeshes();
+    }
+
     private void SetShaderParams()
     {   
         computeShader.SetInt("frameCount", frameCount);
         computeShader.SetInt("bounceCount", bounceCount);
         computeShader.SetBuffer(0, "Spheres", sphereBuffer);
+        computeShader.SetBuffer(0, "Vertices", vertexBuffer);
+        computeShader.SetBuffer(0, "Triangles", triangleBuffer);
+        computeShader.SetBuffer(0, "triangleMaterials", materialBuffer);
         computeShader.SetInt("NumSpheres", objectExporter.spheresCount);
         computeShader.SetTexture(0, "Result", renderTexture);
         computeShader.SetMatrix("CameraToWorld", _camera.cameraToWorldMatrix);
